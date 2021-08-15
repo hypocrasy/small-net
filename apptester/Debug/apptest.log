@@ -1,0 +1,17 @@
+﻿C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Microsoft\VC\v160\Microsoft.CppBuild.targets(519,5): warning MSB8028: 中间目录(Debug\)包含从另一个项目(apptest.vcxproj)共享的文件。   这会导致错误的清除和重新生成行为。
+  function.cpp
+D:\CNTProject1\apptest\function.cpp(77,13): warning C4244: “初始化”: 从“std::streamoff”转换到“int”，可能丢失数据
+D:\CNTProject1\apptest\function.cpp(253,6): warning C4101: “iSndRetval”: 未引用的局部变量
+D:\CNTProject1\apptest\function.cpp(254,7): warning C4101: “kbBuf”: 未引用的局部变量
+D:\CNTProject1\apptest\function.cpp(259,8): warning C4101: “Buf”: 未引用的局部变量
+D:\CNTProject1\apptest\function.cpp(256,6): warning C4101: “length”: 未引用的局部变量
+D:\CNTProject1\apptest\function.cpp(251,6): warning C4101: “selection”: 未引用的局部变量
+D:\CNTProject1\apptest\function.cpp(295,6): warning C4101: “len”: 未引用的局部变量
+D:\CNTProject1\apptest\function.cpp(294,6): warning C4101: “iSndRetval”: 未引用的局部变量
+D:\CNTProject1\apptest\function.cpp(297,6): warning C4101: “i”: 未引用的局部变量
+D:\CNTProject1\apptest\function.cpp(296,6): warning C4101: “bufSend”: 未引用的局部变量
+D:\CNTProject1\apptest\function.cpp(355,6): warning C4101: “retval”: 未引用的局部变量
+D:\CNTProject1\apptest\function.cpp(446,20): warning C4018: “<”: 有符号/无符号不匹配
+D:\CNTProject1\apptest\function.cpp(435,6): warning C4101: “bufSend”: 未引用的局部变量
+D:\CNTProject1\apptest\function.cpp(429,6): warning C4101: “selection”: 未引用的局部变量
+  apptest.vcxproj -> D:\CNTProject1\apptest\Debug\apptester.exe

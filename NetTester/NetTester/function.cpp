@@ -1,0 +1,454 @@
+//Nettester 的功能文件
+#include <iostream>
+#include <conio.h>
+#include "winsock.h"
+#include "stdio.h"
+#include "CfgFileParms.h"
+#include "function.h"
+#include <sstream>
+#include <iomanip>
+#include <vector>
+#include <deque>
+#include <list>
+#include <set>
+#include <map>
+#include <stack>
+#include <queue>
+#include <bitset>
+#include<string>
+#include <numeric>
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <cstdio>
+#include <cstring>
+#include <cmath>
+#include <cstdlib>
+#include <cctype>
+#include <complex>
+#include <ctime>
+#include <windows.h>
+using namespace std;
+const int INF = 1000;
+//以下为重要的变量
+U8* sendbuf;        //用来组织发送数据的缓存，大小为MAX_BUFFER_SIZE,可以在这个基础上扩充设计，形成适合的结构，例程中没有使用，只是提醒一下
+int printCount = 0; //打印控制
+int spin = 0;  //打印动态信息控制
+
+//------华丽的分割线，一些统计用的全局变量------------
+int iSndTotal = 0;  //发送数据总量
+int iSndTotalCount = 0; //发送数据总次数
+int iSndErrorCount = 0;  //发送错误次数
+int iRcvForward = 0;     //转发数据总量
+int iRcvForwardCount = 0; //转发数据总次数
+int iRcvToUpper = 0;      //从低层递交高层数据总量
+int iRcvToUpperCount = 0;  //从低层递交高层数据总次数
+int iRcvUnknownCount = 0;  //收到不明来源数据总次数
+int ip;
+extern map<int, int> nextnode;//下一个节点
+extern map<int, int> lower_interface;//发出端口
+extern map<int, int> cost;//到目标点的费用
+int init_count = 0;
+int lastsend = 0x3f3f3f3f;
+int router_or_not = 0;
+bool ifipinit=0;
+int locip = 0;
+//打印统计信息
+void print_statistics();
+void menu();
+//***************重要函数提醒******************************
+//名称：InitFunction
+//功能：初始化功能面，由main函数在读完配置文件，正式进入驱动机制前调用
+//输入：
+//输出：
+void InitFunction(CCfgFileParms& cfgParms)
+{
+	sendbuf = (char*)malloc(MAX_BUFFER_SIZE);
+	if (sendbuf == NULL) {
+		cout << "内存不够" << endl;
+		//这个，计算机也太，退出吧
+		exit(0);
+	}
+	return;
+}
+//***************重要函数提醒******************************
+//名称：EndFunction
+//功能：结束功能面，由main函数在收到exit命令，整个程序退出前调用
+//输入：
+//输出：
+void EndFunction()
+{
+	if (sendbuf != NULL)
+		free(sendbuf);
+	return;
+}
+void printtest(U8* a, int len)
+{
+	cout << "\n";
+	for (int i = 0; i < len; i++)
+	{
+		cout << (int)*(a + i) << " ";
+	}
+	cout << "\n";
+}
+void radio(U8* buf, int len)
+{
+	//printtest(buf, len);
+	for (int i = 0; i < 2; i++)
+	{
+
+		SendtoLower(buf, len, i);
+	}
+
+}
+
+void announce()
+{
+	int des_ip = 0;
+	int len = cost.size();//len代表现在路由表中的数量
+	U8* tem = (U8*)malloc(len * 2 + 6);
+	*(tem) = stoi(strDevID)*10;
+	*(tem + 1) =0;//源ip
+	
+	*(tem + 2) = 0;
+	*(tem + 3) = 0;//目的ip
+	*(tem + 4) = 0;//第一位0代表此数据是距离矢量算法传递的数据
+	*(tem + 5) = len;//后面传递路由条目数量
+	int cnt = 6;
+	for (auto& i : cost)
+	{
+		*(tem + cnt) = i.first;
+		*(tem + cnt + 1) = i.second;
+		cnt += 2;
+	}
+	radio(tem, len * 2 + 6);//广播
+	//SendtoLower(tem, len * 2 + 4, 0);
+	lastsend = printCount;
+	init_count++;
+}
+
+//名称：net_assign_ip
+//功能:路由器的网络层给链路层下发的指令——&+子网序号
+//参数:SN:Serial Number,子网序号
+void net_assign_ip(int SN, unsigned short port)
+{
+	int len = 2;
+	int iSndRetval;
+	U8* buf = NULL;
+	U8* bufSend = NULL;
+	buf = (U8*)malloc(len);  //用来存放‘&+子网序号’
+	*(buf) = '&';
+	*(buf + 1) = char(SN);
+
+
+	//下层接口是字节数组，直接发送
+	iSndRetval = SendtoLower(buf, len, port);
+	iSndRetval = iSndRetval * 8; //换算成位
+
+}
+void ip_init()
+{
+	U8* tem = (U8*)malloc(2);
+	*(tem) = '&';
+	for (int i = 0; i < lowerNumber; i++)
+	{
+		*(tem + 1) = stoi(strDevID)*10+i;
+		SendtoLower(tem, 2,i);
+	}
+}
+void router_init()
+{
+	if (!ifipinit)
+	{
+		ip_init();
+		ifipinit = 1;
+	}
+	
+	if (printCount - lastsend >= 10 && init_count < 5)//这个条件是每隔50个单位实行一次，最多五次
+	{
+		announce();//这个函数是把自己的路由表广播出去
+	}
+	if (!init_count)//因为一开始lastsend设置成为无穷大，所以第一次要手动触发，printCount>=500是因为要等待所有实体生成后再进行发送
+	{
+		announce();//因为
+
+	}
+	if (init_count == 5 && printCount - lastsend >= 100)
+	{
+		cout << "\ncost:\n";
+		for (auto& i : cost)
+		{
+			cout << i.first << ":" << i.second << " ";
+		}
+		cout << "\n";
+		cout << "\nnextnode:\n";
+		for (auto& i : nextnode)
+		{
+			cout << i.first << ":" << i.second << " ";
+		}
+		cout << "\n";
+		cout << "\nlower_interface:\n";
+		for (auto& i : lower_interface)
+		{
+			cout << i.first << ":" << i.second << " ";
+		}
+		cout << "\n";
+		init_count++;
+	}
+}
+U8* addhead(U8* buf, int len, int desip)
+{
+	U8* buf2 = (U8*)malloc(len + 5);
+	*buf2 = locip/10;
+	*(buf2 + 1) = locip % 10;
+	*(buf2 + 2) = desip/10;
+	*(buf2 + 3) = desip % 10;
+	*(buf2 + 4) = 1;
+	for (int i = 5; i < len + 5; i++)
+	{
+		*(buf2 + i) = *(buf + i - 5);
+	}
+	return buf2;
+}
+//***************重要函数提醒******************************
+//名称：TimeOut
+//功能：本函数被调用时，意味着sBasicTimer中设置的超时时间到了，
+//      函数内容可以全部替换为设计者自己的想法
+//      例程中实现了几个同时进行功能，供参考
+//      1)根据iWorkMode工作模式，判断是否将键盘输入的数据发送，
+//        因为scanf会阻塞，导致计时器在等待键盘的时候完全失效，所以使用_kbhit()无阻塞、不间断地在计时的控制下判断键盘状态，这个点Get到没？
+//      2)不断刷新打印各种统计值，通过打印控制符的控制，可以始终保持在同一行打印，Get？
+//输入：时间到了就触发，只能通过全局变量供给输入
+//输出：这就是个不断努力干活的老实孩子
+void TimeOut()
+{
+
+	printCount++;
+	if (_kbhit()) {
+		//键盘有动作，进入菜单模式
+		menu();
+	}
+	router_or_not = lowerNumber - 1;
+	if (router_or_not&&printCount>800) router_init();//执行路由器的命令
+}
+void saveip(U8* buf,int len)
+{
+	locip =*(buf + 1)*10+ *(buf + 2);
+	cout << locip << "\n";
+}
+
+//------------华丽的分割线，以下是数据的收发,--------------------------------------------
+
+//***************重要函数提醒******************************
+//名称：RecvfromUpper
+//功能：本函数被调用时，意味着收到一份高层下发的数据
+//      函数内容全部可以替换成设计者自己的
+//      例程功能介绍
+//         1)通过低层的数据格式参数lowerMode，判断要不要将数据转换成bit流数组发送，发送只发给低层接口0，
+//           因为没有任何可供参考的策略，讲道理是应该根据目的地址在多个接口中选择转发的。
+//         2)判断iWorkMode，看看是不是需要将发送的数据内容都打印，调试时可以，正式运行时不建议将内容全部打印。
+//输入：U8 * buf,高层传进来的数据， int len，数据长度，单位字节
+//输出：
+void RecvfromUpper(U8* buf, int len)
+{
+	int desip = *(buf + len - 2) * 10 + *(buf + len - 1);
+	cout << len;
+	if (desip == locip) return;
+	//cout << desip << locip;
+	//if ((desip / 10) == (locip / 10)||desip==0)
+	//{
+		//cout << 1;
+	U8* buf2 = addhead(buf, len - 1,desip);
+	printtest(buf2, len + 3);
+	SendtoLower(buf2, len + 3,0);
+	//}
+	
+	
+}
+//***************重要函数提醒******************************
+//名称：RecvfromLower
+//功能：本函数被调用时，意味着得到一份从低层实体递交上来的数据
+//      函数内容全部可以替换成设计者想要的样子
+//      例程功能介绍：
+//          1)例程实现了一个简单粗暴不讲道理的策略，所有从接口0送上来的数据都直接转发到接口1，而接口1的数据上交给高层，就是这么任性
+//          2)转发和上交前，判断收进来的格式和要发送出去的格式是否相同，否则，在bite流数组和字节流数组之间实现转换
+//            注意这些判断并不是来自数据本身的特征，而是来自配置文件，所以配置文件的参数写错了，判断也就会失误
+//          3)根据iWorkMode，判断是否需要把数据内容打印
+//输入：U8 * buf,低层递交上来的数据， int len，数据长度，单位字节，int ifNo ，低层实体号码，用来区分是哪个低层
+//输出：
+void RecvfromLower(U8* buf, int len, int ifNo)
+{
+	/*cout << "\n";
+	for (int i = 0; i < len; i++)
+	{
+		cout << (int)*(buf + i) << " ";
+	}
+	cout << "\n";*/
+	if (*buf == '$')
+	{
+		saveip(buf,len);
+		return;
+	}
+	if (!router_or_not)
+	{
+
+		printtest(buf, len);
+		SendtoUpper(buf + 5, len - 5);
+	}
+
+	if(*(buf + 4) == 0 && router_or_not)
+	{
+		printtest(buf, len);
+	int rec_router_num = *(buf + 5);
+	int src_ip = *(buf)/10;
+	cost[src_ip] = 1;
+	nextnode[src_ip] = src_ip;
+	lower_interface[src_ip] = ifNo;
+	for (int i = 6; i < rec_router_num * 2 + 6; i += 2)
+	{
+		if (*(buf + i) == stoi(strDevID)) continue;
+		if (cost.count(*(buf + i)) == 0 || cost[*(buf + i)] > 1 + *(buf + i + 1))
+		{
+			cost[*(buf + i)] = 1 + *(buf + i + 1);
+			nextnode[*(buf + i)] = src_ip;
+			lower_interface[*(buf + i)] = ifNo;
+
+		}
+
+
+	}
+	return;
+	}
+	if (*(buf + 4) == 1 && router_or_not)
+	{
+		//cout << 1111;
+		int srcip = *(buf) * 10 + *(buf + 1);
+		int desip = *(buf + 2) * 10 + *(buf + 3);
+
+		printtest(buf , len );
+			U8* buf1 = (U8*)malloc(len + 1);
+			for (int i = 0; i < len; i++)
+			{
+				*(buf1 + i) = *(buf + i);
+			}
+			
+		if (desip / 100 == stoi(strDevID))
+		{
+			//SendtoUpper(buf + 5, len - 5);
+			cout << "sendtonei:" << (desip / 10) % 10;
+			*(buf1 + len) = 0;
+			SendtoLower(buf1, len+1, (desip / 10) % 10);
+		}
+		else
+		{
+			cout << "sendto:" << lower_interface[desip / 100];
+			*(buf1 + len) = nextnode[desip / 100];
+			SendtoLower(buf1, len+1, lower_interface[desip / 100]);
+		}
+	}
+	
+}
+void print_statistics()
+{
+	if (printCount % 10 == 0) {
+		switch (spin) {
+		case 1:
+			printf("\r-");
+			break;
+		case 2:
+			printf("\r\\");
+			break;
+		case 3:
+			printf("\r|");
+			break;
+		case 4:
+			printf("\r/");
+			spin = 0;
+			break;
+		}
+		cout << "共转发 " << iRcvForward << " 位，" << iRcvForwardCount << " 次，" << "递交 " << iRcvToUpper << " 位，" << iRcvToUpperCount << " 次," << "发送 " << iSndTotal << " 位，" << iSndTotalCount << " 次，" << "发送不成功 " << iSndErrorCount << " 次,""收到不明来源 " << iRcvUnknownCount << " 次。";
+		spin++;
+	}
+
+}
+void menu()
+{
+	int selection;
+	unsigned short port;
+	int iSndRetval;
+	char kbBuf[100];
+	int len;
+	U8* bufSend;
+	//发送|打印：[发送控制（0，等待键盘输入；1，自动）][打印控制（0，仅定期打印统计信息；1，按bit流打印数据，2按字节流打印数据]
+	cout << endl << endl << "设备号:" << strDevID << ",    层次:" << strLayer << ",    实体号:" << strEntity;
+	cout << endl << "1-启动自动发送(无效);" << endl << "2-停止自动发送（无效）; " << endl << "3-从键盘输入发送; ";
+	cout << endl << "4-仅打印统计信息; " << endl << "5-按比特流打印数据内容;" << endl << "6-按字节流打印数据内容;";
+	cout << endl << "0-取消" << endl << "请输入数字选择命令：";
+	cin >> selection;
+	switch (selection) {
+	case 0:
+
+		break;
+	case 1:
+		iWorkMode = 10 + iWorkMode % 10;
+		break;
+	case 2:
+		iWorkMode = iWorkMode % 10;
+		break;
+	case 3:
+		cout << "输入字符串(,不超过100字符)：";
+		cin >> kbBuf;
+		cout << "输入低层接口号：";
+		cin >> port;
+
+		len = (int)strlen(kbBuf) + 1; //字符串最后有个结束符
+		if (port >= lowerNumber) {
+			cout << "没有这个接口" << endl;
+			return;
+		}
+		if (lowerMode[port] == 0) {
+			//下层接口是比特流数组,需要一片新的缓冲来转换格式
+			bufSend = (U8*)malloc(len * 8);
+
+			iSndRetval = ByteArrayToBitArray(bufSend, len * 8, kbBuf, len);
+			iSndRetval = SendtoLower(bufSend, iSndRetval, port);
+			free(bufSend);
+		}
+		else {
+			//下层接口是字节数组，直接发送
+			iSndRetval = SendtoLower(kbBuf, len, port);
+			iSndRetval = iSndRetval * 8; //换算成位
+		}
+		//发送统计
+		if (iSndRetval > 0) {
+			iSndTotalCount++;
+			iSndTotal += iSndRetval;
+		}
+		else {
+			iSndErrorCount++;
+		}
+		//看要不要打印数据
+		cout << endl << "向接口 " << port << " 发送数据：" << endl;
+		switch (iWorkMode % 10) {
+		case 1:
+			print_data_bit(kbBuf, len, 1);
+			break;
+		case 2:
+			print_data_byte(kbBuf, len, 1);
+			break;
+		case 0:
+			break;
+		}
+		break;
+	case 4:
+		iWorkMode = (iWorkMode / 10) * 10 + 0;
+		break;
+	case 5:
+		iWorkMode = (iWorkMode / 10) * 10 + 1;
+		break;
+	case 6:
+		iWorkMode = (iWorkMode / 10) * 10 + 2;
+		break;
+	}
+
+}

@@ -1,0 +1,2 @@
+C:\Users\张洋\source\repos\apptest\Debug\apptester.exe
+D:\CNTProject1\apptest\Debug\apptester.exe
